@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import streamlit as st
 
+# Plotly is optional; we handle gracefully if not installed
 try:
     import plotly.graph_objects as go
     PLOTLY_OK = True
@@ -11,10 +12,33 @@ except Exception:
     PLOTLY_OK = False
 
 # --------------------------
-# Config
+# Config & simple branding
 # --------------------------
-st.set_page_config(page_title="Cyber Health Check (NIST CSF PoC)", page_icon="🛡️", layout="wide")
+st.set_page_config(
+    page_title="Cyber Health Check (NIST CSF) — PoC",
+    page_icon="🛡️",
+    layout="wide",
+)
 
+# Tidy the layout a little
+st.markdown("""
+<style>
+.block-container {max-width: 1200px; padding-top: 1.0rem;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown(
+    "<h1 style='display:flex;align-items:center;gap:10px;margin-bottom:0.2rem'>"
+    "🛡️ Cyber Health Check <span style='font-weight:300'>(NIST CSF)</span>"
+    "</h1>"
+    "<p style='margin-top:-2px;color:#6b7280'>Quick maturity snapshot + clear next steps (PoC)</p>",
+    unsafe_allow_html=True,
+)
+st.divider()
+
+# --------------------------
+# Constants
+# --------------------------
 NIST_FUNCTIONS = ["Identify", "Protect", "Detect", "Respond", "Recover"]
 
 QUESTION_SET: List[Dict] = [
@@ -36,6 +60,18 @@ QUESTION_SET: List[Dict] = [
     # Recover
     {"id":"RC-1","domain":"Recover","text":"We have tested backups for critical systems and data in the last 6 months.","weight":1.2},
     {"id":"RC-2","domain":"Recover","text":"We have defined recovery time objectives (RTO) for key services.","weight":1.0},
+]
+
+# ASD Essential Eight (simple snapshot)
+E8_ITEMS = [
+    ("Application control", 1.0),
+    ("Patch applications", 1.2),
+    ("Configure MS Office macro settings", 0.8),
+    ("User application hardening", 1.0),
+    ("Restrict admin privileges", 1.2),
+    ("Patch operating systems", 1.2),
+    ("Multi-factor authentication", 1.5),
+    ("Regular backups", 1.1),
 ]
 
 REMEDIATIONS: Dict[str, List[str]] = {
@@ -141,7 +177,7 @@ def radar_chart(domain_scores: Dict[str, float]):
 
 def build_markdown_report(meta: Dict, domain_scores: Dict[str, float], overall: float, recs: List[str]) -> str:
     lines = []
-    lines.append(f"# Cyber Health Check — PoC Report")
+    lines.append("# Cyber Health Check — PoC Report")
     lines.append("")
     lines.append(f"**Organization:** {meta.get('name','(not provided)')}  ")
     lines.append(f"**Industry:** {meta.get('industry')}  ")
@@ -149,7 +185,7 @@ def build_markdown_report(meta: Dict, domain_scores: Dict[str, float], overall: 
     lines.append(f"**Region:** {meta.get('region')}  ")
     lines.append(f"**Date:** {dt.date.today().isoformat()}")
     lines.append("")
-    lines.append(f"## Overall Index")
+    lines.append("## Overall Index")
     lines.append(f"**{overall}/100**  ")
     lines.append("> Index is the average of NIST CSF function scores normalised to 100.")
     lines.append("")
@@ -165,21 +201,28 @@ def build_markdown_report(meta: Dict, domain_scores: Dict[str, float], overall: 
     return "\n".join(lines)
 
 # --------------------------
-# UI
+# Sidebar (Org + options)
 # --------------------------
-st.title("🛡️ Cyber Health Check (NIST CSF) — Proof of Concept")
-st.caption("A lightweight prototype to assess SME cyber maturity and generate actionable next steps.")
-
 with st.sidebar:
     st.header("Organization")
     org_name = st.text_input("Company / Org name", "")
     industry = st.selectbox("Industry", ["Professional Services","Healthcare","Construction","Retail","Education","Other"], index=0)
     size = st.number_input("Headcount", min_value=1, max_value=100000, value=25, step=1)
     region = st.selectbox("Region", ["AU/NZ", "SE Asia", "North America", "Europe/MENA", "Other"], index=0)
+
+    st.markdown("---")
+    contact_email = st.text_input("Email (optional, to include on the report)")
+
+    st.markdown("---")
+    e8_on = st.toggle("Show Essential Eight section", value=True)
+
     st.markdown("---")
     st.write("**How scoring works**")
     st.write("• Each question is weighted.\n• Answers map to a 1–5 function score.\n• Overall index is the mean of function scores scaled to 100.")
 
+# --------------------------
+# Main assessment (NIST CSF)
+# --------------------------
 st.subheader("Assessment")
 st.write("Answer the questions below as **Yes / Partially / No / Don't know**. Keep it honest — this helps prioritise your next steps.")
 
@@ -194,6 +237,7 @@ with st.form("assessment"):
 if submitted:
     df, domain_scores, overall = score_answers(answers)
     st.success(f"Calculated overall Cyber Health Index: **{overall}/100**")
+
     c1, c2 = st.columns([1,1])
     with c1:
         st.markdown("#### NIST CSF Scores (1–5)")
@@ -202,22 +246,69 @@ if submitted:
             "Score (1–5)": [round(v,1) for v in domain_scores.values()]
         })
         st.dataframe(score_tbl, use_container_width=True, hide_index=True)
+
     with c2:
         st.markdown("#### Radar View")
         radar_chart(domain_scores)
 
+    # Recommended actions
     st.markdown("#### Top Recommended Actions")
     recs = top_recommendations(domain_scores, industry, k=6)
     for i, r in enumerate(recs, 1):
         st.write(f"{i}. {r}")
 
-    meta = {"name": org_name, "industry": industry, "size": size, "region": region}
-    report_md = build_markdown_report(meta, domain_scores, overall, recs)
-    st.download_button("⬇️ Download PoC Report (Markdown)", data=report_md.encode("utf-8"),
-                       file_name="cyber_health_poc_report.md", mime="text/markdown")
-
+    # Downloads
     st.markdown("---")
+    st.markdown("#### Downloads")
+    st.download_button(
+        "⬇️ Download your responses (CSV)",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="cyber_health_responses.csv",
+        mime="text/csv",
+    )
+
+    meta = {
+        "name": org_name,
+        "industry": industry,
+        "size": size,
+        "region": region,
+        "email": contact_email or "(not provided)",
+    }
+    report_md = build_markdown_report(meta, domain_scores, overall, recs)
+    st.download_button(
+        "⬇️ Download PoC Report (Markdown)",
+        data=report_md.encode("utf-8"),
+        file_name="cyber_health_poc_report.md",
+        mime="text/markdown",
+    )
+
     st.caption("© PoC — For demonstration only.")
 
 else:
     st.info("Fill the form and click **Calculate Results** to see your scores and tailored next steps.")
+
+# --------------------------
+# Essential Eight snapshot (independent section)
+# --------------------------
+if e8_on:
+    st.divider()
+    st.subheader("Essential Eight Snapshot")
+    st.write("A quick sense-check against the ASD Essential Eight. This is separate from the NIST CSF scores above.")
+
+    e8_cols = st.columns(2)
+    with st.form("e8"):
+        e8_answers = {}
+        for i, (name, wt) in enumerate(E8_ITEMS):
+            with e8_cols[i % 2]:
+                e8_answers[name] = st.radio(
+                    name, CHOICES, index=2, key=f"E8-{i}"
+                )
+        e8_submit = st.form_submit_button("Calculate Essential Eight score")
+
+    if e8_submit:
+        values = []
+        for name, wt in E8_ITEMS:
+            values.append(SCORE_MAP[e8_answers[name]] * wt)
+        e8_score = round(100 * (sum(values) / sum(w for _, w in E8_ITEMS)), 1)
+        st.success(f"Essential Eight Index: **{e8_score}/100**")
+        st.caption("This simple index is a weighted average for a quick snapshot; not a formal maturity level.")
