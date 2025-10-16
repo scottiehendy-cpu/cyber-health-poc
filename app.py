@@ -1,5 +1,3 @@
-import os
-import math
 import datetime as dt
 from typing import Dict, List, Tuple
 
@@ -12,22 +10,30 @@ try:
 except Exception:
     PLOTLY_OK = False
 
+# --------------------------
+# Config
+# --------------------------
 st.set_page_config(page_title="Cyber Health Check (NIST CSF PoC)", page_icon="🛡️", layout="wide")
 
 NIST_FUNCTIONS = ["Identify", "Protect", "Detect", "Respond", "Recover"]
 
 QUESTION_SET: List[Dict] = [
+    # Identify
     {"id":"ID-1","domain":"Identify","text":"We keep an up-to-date asset inventory (devices, SaaS, data).","weight":1.0},
     {"id":"ID-2","domain":"Identify","text":"We classify sensitive data and know where it lives.","weight":1.0},
     {"id":"ID-3","domain":"Identify","text":"We have named security roles & responsibilities (RACI).","weight":1.0},
-    {"id":"PR-1","domain":"Protect","text":"Multi‑factor authentication (MFA) is enforced for all admin and remote access.","weight":1.5},
+    # Protect
+    {"id":"PR-1","domain":"Protect","text":"Multi-factor authentication (MFA) is enforced for all admin and remote access.","weight":1.5},
     {"id":"PR-2","domain":"Protect","text":"All devices have disk encryption enabled.","weight":1.0},
     {"id":"PR-3","domain":"Protect","text":"Patching: OS/apps are updated within defined timeframes.","weight":1.2},
     {"id":"PR-4","domain":"Protect","text":"Users receive phishing/security awareness training at least annually.","weight":0.8},
+    # Detect
     {"id":"DE-1","domain":"Detect","text":"We collect and review security logs from critical systems (e.g., M365/AWS).","weight":1.2},
-    {"id":"DE-2","domain":"Detect","text":"Alerts are configured for suspicious sign‑ins and data exfiltration.","weight":1.0},
+    {"id":"DE-2","domain":"Detect","text":"Alerts are configured for suspicious sign-ins and data exfiltration.","weight":1.0},
+    # Respond
     {"id":"RS-1","domain":"Respond","text":"We have a documented incident response plan (IRP).","weight":1.2},
-    {"id":"RS-2","domain":"Respond","text":"We run an incident simulation/table‑top at least annually.","weight":1.0},
+    {"id":"RS-2","domain":"Respond","text":"We run an incident simulation/table-top at least annually.","weight":1.0},
+    # Recover
     {"id":"RC-1","domain":"Recover","text":"We have tested backups for critical systems and data in the last 6 months.","weight":1.2},
     {"id":"RC-2","domain":"Recover","text":"We have defined recovery time objectives (RTO) for key services.","weight":1.0},
 ]
@@ -35,21 +41,21 @@ QUESTION_SET: List[Dict] = [
 REMEDIATIONS: Dict[str, List[str]] = {
     "Identify": [
         "Establish and maintain an asset inventory across devices, accounts, SaaS, and data stores.",
-        "Label and protect sensitive data; restrict access based on least‑privilege.",
+        "Label and protect sensitive data; restrict access based on least-privilege.",
         "Publish a lightweight RACI so staff know their security responsibilities."
     ],
     "Protect": [
         "Enforce MFA for all users, especially admins and remote access.",
-        "Turn on full‑disk encryption and automatic lock on all endpoints.",
+        "Turn on full-disk encryption and automatic lock on all endpoints.",
         "Adopt a monthly patching cadence; urgent patches within 7–14 days."
     ],
     "Detect": [
-        "Enable audit logs for M365/Google/AWS and centralise high‑value alerts.",
+        "Enable audit logs for M365/Google/AWS and centralise high-value alerts.",
         "Set alerts for impossible travel, excessive downloads, and repeated failed logins."
     ],
     "Respond": [
-        "Write a one‑page IRP with roles, contacts, and severity levels.",
-        "Run a 60‑minute tabletop exercise each quarter and capture lessons learned."
+        "Write a one-page IRP with roles, contacts, and severity levels.",
+        "Run a 60-minute tabletop exercise each quarter and capture lessons learned."
     ],
     "Recover": [
         "Back up key systems daily; test restores quarterly (at least one full test).",
@@ -61,7 +67,7 @@ INDUSTRY_THREATS = {
     "Healthcare": ["Ransomware on file servers/EMR", "Phishing for patient data", "Legacy device vulnerabilities"],
     "Professional Services": ["Business email compromise (BEC)", "Account takeover", "Data leakage from SaaS"],
     "Construction": ["BEC on invoices", "Unpatched laptops on site", "Weak vendor access"],
-    "Retail": ["POS malware (if applicable)", "Credential stuffing", "Unsegmented Wi‑Fi"],
+    "Retail": ["POS malware (if applicable)", "Credential stuffing", "Unsegmented Wi-Fi"],
     "Education": ["Phishing targeting staff/students", "Unmanaged endpoints", "Shadow IT / SaaS sprawl"],
     "Other": ["Phishing & credential theft", "Ransomware", "Shadow IT"]
 }
@@ -69,6 +75,9 @@ INDUSTRY_THREATS = {
 CHOICES = ["Yes", "Partially", "No", "Don't know"]
 SCORE_MAP = {"Yes": 1.0, "Partially": 0.5, "No": 0.0, "Don't know": 0.0}
 
+# --------------------------
+# Helpers
+# --------------------------
 def score_answers(answers: Dict[str, str]) -> Tuple[pd.DataFrame, Dict[str, float], float]:
     rows = []
     for q in QUESTION_SET:
@@ -86,7 +95,7 @@ def score_answers(answers: Dict[str, str]) -> Tuple[pd.DataFrame, Dict[str, floa
         })
     df = pd.DataFrame(rows)
     domain_scores = {}
-    for dom in ["Identify","Protect","Detect","Respond","Recover"]:
+    for dom in NIST_FUNCTIONS:
         d = df[df["domain"] == dom]
         if len(d) == 0:
             domain_scores[dom] = 0.0
@@ -95,11 +104,11 @@ def score_answers(answers: Dict[str, str]) -> Tuple[pd.DataFrame, Dict[str, floa
             got = d["weighted"].sum()
             frac = got / max_possible if max_possible > 0 else 0.0
             domain_scores[dom] = 1.0 + 4.0 * frac  # 1..5
-    overall_index = round(100.0 * (sum(domain_scores.values()) / (5.0 * 5.0)), 1)
+    overall_index = round(100.0 * (sum(domain_scores.values()) / (5.0 * len(NIST_FUNCTIONS))), 1)
     return df, domain_scores, overall_index
 
 def top_recommendations(domain_scores: Dict[str, float], industry: str, k: int = 6) -> List[str]:
-    ranked = sorted(domain_scores.items(), key=lambda x: x[1])
+    ranked = sorted(domain_scores.items(), key=lambda x: x[1])  # weakest first
     recs = []
     for dom, _ in ranked:
         for r in REMEDIATIONS.get(dom, []):
@@ -110,7 +119,7 @@ def top_recommendations(domain_scores: Dict[str, float], industry: str, k: int =
         if len(recs) >= k:
             break
     threats = INDUSTRY_THREATS.get(industry, INDUSTRY_THREATS["Other"])
-    recs.append(f"Industry watch‑outs: {', '.join(threats)}.")
+    recs.append(f"Industry watch-outs: {', '.join(threats)}.")
     return recs
 
 def radar_chart(domain_scores: Dict[str, float]):
@@ -121,7 +130,6 @@ def radar_chart(domain_scores: Dict[str, float]):
     vals = list(domain_scores.values())
     cats += [cats[0]]
     vals += [vals[0]]
-    import plotly.graph_objects as go
     fig = go.Figure(data=go.Scatterpolar(r=vals, theta=cats, fill='toself', name='Score'))
     fig.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[1,5])),
@@ -146,7 +154,7 @@ def build_markdown_report(meta: Dict, domain_scores: Dict[str, float], overall: 
     lines.append("> Index is the average of NIST CSF function scores normalised to 100.")
     lines.append("")
     lines.append("## NIST CSF Function Scores (1–5)")
-    for k,v in domain_scores.items():
+    for k, v in domain_scores.items():
         lines.append(f"- **{k}:** {v:.1f}")
     lines.append("")
     lines.append("## Top Recommendations")
@@ -154,9 +162,11 @@ def build_markdown_report(meta: Dict, domain_scores: Dict[str, float], overall: 
         lines.append(f"{i}. {r}")
     lines.append("")
     lines.append("_This is a demonstration prototype. Results are advisory and not a formal audit._")
-    return "
-".join(lines)
+    return "\n".join(lines)
 
+# --------------------------
+# UI
+# --------------------------
 st.title("🛡️ Cyber Health Check (NIST CSF) — Proof of Concept")
 st.caption("A lightweight prototype to assess SME cyber maturity and generate actionable next steps.")
 
@@ -203,7 +213,8 @@ if submitted:
 
     meta = {"name": org_name, "industry": industry, "size": size, "region": region}
     report_md = build_markdown_report(meta, domain_scores, overall, recs)
-    st.download_button("⬇️ Download PoC Report (Markdown)", data=report_md.encode("utf-8"), file_name="cyber_health_poc_report.md", mime="text/markdown")
+    st.download_button("⬇️ Download PoC Report (Markdown)", data=report_md.encode("utf-8"),
+                       file_name="cyber_health_poc_report.md", mime="text/markdown")
 
     st.markdown("---")
     st.caption("© PoC — For demonstration only.")
