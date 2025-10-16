@@ -305,7 +305,7 @@ if e8_on:
                 )
         e8_submit = st.form_submit_button("Calculate Essential Eight score")
 
-    if e8_submit:
+   if e8_submit:
     # Compute E8 index + per-control percent (0–100)
     names, wts = zip(*E8_ITEMS)
     percents = [SCORE_MAP[e8_answers[n]] * 100 for n in names]
@@ -333,7 +333,7 @@ if e8_on:
                         'axis': {'range': [0, 100]},
                         'bar': {'thickness': 0.6},
                         'steps': [
-                            {'range': [0, 40]},   # red-ish zone (default colors)
+                            {'range': [0, 40]},
                             {'range': [40, 70]},
                             {'range': [70, 100]}
                         ],
@@ -344,7 +344,7 @@ if e8_on:
             gauge.update_layout(height=280, margin=dict(l=10, r=10, t=50, b=10))
             st.plotly_chart(gauge, use_container_width=True)
 
-        # 2) Radar (Spider) – per control (0–100)
+        # 2) Radar (Spider)
         with col2:
             theta = list(names) + [names[0]]
             rvals = percents + [percents[0]]
@@ -360,7 +360,7 @@ if e8_on:
             )
             st.plotly_chart(radar, use_container_width=True)
 
-        # 3) Horizontal Bar – per control (0–100)
+        # 3) Horizontal Bar
         bar = go.Figure(
             go.Bar(x=percents, y=list(names), orientation="h", text=[f"{p:.0f}" for p in percents], textposition="auto")
         )
