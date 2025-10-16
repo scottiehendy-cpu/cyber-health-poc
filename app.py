@@ -306,9 +306,69 @@ if e8_on:
         e8_submit = st.form_submit_button("Calculate Essential Eight score")
 
     if e8_submit:
-        values = []
-        for name, wt in E8_ITEMS:
-            values.append(SCORE_MAP[e8_answers[name]] * wt)
-        e8_score = round(100 * (sum(values) / sum(w for _, w in E8_ITEMS)), 1)
-        st.success(f"Essential Eight Index: **{e8_score}/100**")
-        st.caption("This simple index is a weighted average for a quick snapshot; not a formal maturity level.")
+    # Compute E8 index + per-control percent (0–100)
+    names, wts = zip(*E8_ITEMS)
+    percents = [SCORE_MAP[e8_answers[n]] * 100 for n in names]
+    weighted = [SCORE_MAP[e8_answers[n]] * wt for n, wt in E8_ITEMS]
+    e8_score = round(100 * (sum(weighted) / sum(wts)), 1)
+
+    st.success(f"Essential Eight Index: **{e8_score}/100**")
+    st.caption("This simple index is a weighted average for a quick snapshot; not a formal maturity level.")
+
+    if not PLOTLY_OK:
+        st.warning("Plotly not installed. Enable visuals by adding `plotly` to requirements.txt.")
+    else:
+        import plotly.graph_objects as go
+
+        col1, col2 = st.columns([1,1])
+
+        # 1) Overall Gauge
+        with col1:
+            gauge = go.Figure(
+                go.Indicator(
+                    mode="gauge+number",
+                    value=e8_score,
+                    number={'suffix': "/100"},
+                    gauge={
+                        'axis': {'range': [0, 100]},
+                        'bar': {'thickness': 0.6},
+                        'steps': [
+                            {'range': [0, 40]},   # red-ish zone (default colors)
+                            {'range': [40, 70]},
+                            {'range': [70, 100]}
+                        ],
+                    },
+                    title={'text': "Essential Eight Index"}
+                )
+            )
+            gauge.update_layout(height=280, margin=dict(l=10, r=10, t=50, b=10))
+            st.plotly_chart(gauge, use_container_width=True)
+
+        # 2) Radar (Spider) – per control (0–100)
+        with col2:
+            theta = list(names) + [names[0]]
+            rvals = percents + [percents[0]]
+            radar = go.Figure(
+                go.Scatterpolar(r=rvals, theta=theta, fill="toself", name="E8 Controls")
+            )
+            radar.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                showlegend=False,
+                height=280,
+                margin=dict(l=10, r=10, t=50, b=10),
+                title="Per-Control Snapshot"
+            )
+            st.plotly_chart(radar, use_container_width=True)
+
+        # 3) Horizontal Bar – per control (0–100)
+        bar = go.Figure(
+            go.Bar(x=percents, y=list(names), orientation="h", text=[f"{p:.0f}" for p in percents], textposition="auto")
+        )
+        bar.update_layout(
+            xaxis=dict(range=[0, 100], title="Percent"),
+            yaxis=dict(autorange="reversed"),
+            height=420,
+            margin=dict(l=10, r=20, t=40, b=40),
+            title="Essential Eight Controls (0–100)"
+        )
+        st.plotly_chart(bar, use_container_width=True)
