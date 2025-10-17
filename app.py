@@ -1,391 +1,326 @@
-import datetime as dt
-from typing import Dict, List, Tuple
+# ------------------------------------------------------------
+# Cyber Health Check (NIST CSF) — NCP PoC
+# Polished UI: NCP branding, gold accents, radar + bar charts,
+# simple assessment, and Markdown report download.
+# ------------------------------------------------------------
 
-import pandas as pd
+from __future__ import annotations
 import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+from datetime import datetime
 
-# Plotly is optional; we handle gracefully if not installed
-try:
-    import plotly.graph_objects as go
-    PLOTLY_OK = True
-except Exception:
-    PLOTLY_OK = False
-# --- Clean hero header ---
-st.markdown("""
+# ---------------------------
+# PAGE CONFIGURATION
+# ---------------------------
+st.set_page_config(
+    page_title="Cyber Health Check (NIST CSF) — NCP PoC",
+    page_icon="assets/ncp_icon_32.png",
+    layout="wide",
+)
+
+# ---------------------------
+# GLOBAL THEME POLISH (CSS)
+# ---------------------------
+st.markdown(
+    """
 <style>
+/* Layout width + top spacing */
 .block-container {max-width: 1120px; padding-top: 0.6rem;}
+
+/* Hero card */
 .ncp-hero{display:flex;gap:16px;align-items:center;padding:14px 18px;border:1px solid #ececec;
           border-radius:14px;background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.04);}
 .ncp-hero img{width:48px;height:48px;display:block}
 .ncp-hero h1{font-size:28px;line-height:1.15;margin:0;color:#0b0b0b;font-weight:800}
-.ncp-hero h1 b{color:#0b0b0b}
 .ncp-hero small{display:block;margin-top:2px;color:#6b7280}
-.ncp-accent{height:3px;background:linear-gradient(90deg,#D4AF37, #f6e39a);border-radius:999px;margin:14px 2px 0}
-</style>
+.ncp-accent{height:3px;background:linear-gradient(90deg,#D4AF37,#f6e39a);border-radius:999px;margin:14px 2px 0}
 
-<div class="ncp-hero">
-  <img src="assets/ncp_icon_64.png" alt="NCP">
-  <div>
-    <h1><b>Cyber Health Check</b> <span style="font-weight:400;">(NIST CSF)</span></h1>
-    <small>National Consulting Partners — quick maturity snapshot & clear next steps</small>
-  </div>
-</div>
-<div class="ncp-accent"></div>
-""", unsafe_allow_html=True)
+/* Buttons */
+.stButton > button{
+  background:#D4AF37;border:1px solid #C49C2C;color:#0b0b0b;font-weight:700;
+  padding:.6rem 1rem;border-radius:12px;
+}
+.stButton > button:hover{filter:brightness(1.03); box-shadow:0 4px 14px rgba(212,175,55,.2)}
 
-st.set_page_config(
-    page_title="Cyber Health Check (NIST CSF) — PoC",
-    page_icon="🛡️",
-    layout="wide",
-)
+/* Tabs */
+.stTabs [data-baseweb="tab-list"]{gap:6px}
+.stTabs [data-baseweb="tab"]{
+  color:#374151;background:#F6F7F9;border-radius:12px 12px 0 0;
+  padding:10px 14px;font-weight:700;border:1px solid #e8e8e8; border-bottom:none;
+}
+.stTabs [aria-selected="true"]{
+  background:#fff;color:#0b0b0b;box-shadow:0 -2px 0 0 #D4AF37 inset;
+}
 
-# Tidy the layout a little
-st.markdown(
-    """
-<style>
-.block-container {max-width: 1200px; padding-top: 1.0rem;}
+/* Select / Radio accent (modern browsers) */
+input[type="radio"], input[type="checkbox"] {accent-color:#D4AF37}
+.stSelectbox > div > div {border-radius:10px}
+
+/* Cards / sections */
+.ncp-card{border:1px solid #ececec;border-radius:14px;padding:14px 16px;background:#fff}
 </style>
 """,
     unsafe_allow_html=True,
 )
 
+# ---------------------------
+# HEADER
+# ---------------------------
 st.markdown(
-    "<h1 style='display:flex;align-items:center;gap:10px;margin-bottom:0.2rem'>"
-    "🛡️ Cyber Health Check <span style='font-weight:300'>(NIST CSF)</span>"
-    "</h1>"
-    "<p style='margin-top:-2px;color:#6b7280'>Quick maturity snapshot + clear next steps (PoC)</p>",
+    """
+<div class="ncp-hero">
+  <img src="assets/ncp_icon_64.png" alt="NCP">
+  <div>
+    <h1>Cyber Health Check <span style="font-weight:400">(NIST CSF)</span></h1>
+    <small>National Consulting Partners — quick maturity snapshot & clear next steps</small>
+  </div>
+</div>
+<div class="ncp-accent"></div>
+""",
     unsafe_allow_html=True,
 )
-st.divider()
 
-# --------------------------
-# Constants
-# --------------------------
+# ---------------------------
+# SIDEBAR
+# ---------------------------
+with st.sidebar:
+    st.image("assets/ncp_icon_64.png", width=36)
+    st.markdown("**NCP Cyber** — PoC")
+    st.markdown(
+        "This lightweight assessment gives an indicative view of maturity "
+        "using **NIST CSF** and **Essential Eight**. Results are advisory only."
+    )
+    st.markdown("---")
+    st.caption("Tip: Use this during discovery calls. Export the report and send a follow-up email.")
+
+# ---------------------------
+# INPUT HELPERS & DATA
+# ---------------------------
+SCALE = {
+    "No": 0,
+    "Partially": 1,
+    "Mostly": 2,
+    "Fully": 3,
+    "Don't know": 1,   # neutral-ish weight
+}
+SCALE_LABELS = list(SCALE.keys())
+
 NIST_FUNCTIONS = ["Identify", "Protect", "Detect", "Respond", "Recover"]
 
-QUESTION_SET: List[Dict] = [
-    # Identify
-    {"id": "ID-1", "domain": "Identify", "text": "We keep an up-to-date asset inventory (devices, SaaS, data).", "weight": 1.0},
-    {"id": "ID-2", "domain": "Identify", "text": "We classify sensitive data and know where it lives.", "weight": 1.0},
-    {"id": "ID-3", "domain": "Identify", "text": "We have named security roles & responsibilities (RACI).", "weight": 1.0},
-    # Protect
-    {"id": "PR-1", "domain": "Protect", "text": "Multi-factor authentication (MFA) is enforced for all admin and remote access.", "weight": 1.5},
-    {"id": "PR-2", "domain": "Protect", "text": "All devices have disk encryption enabled.", "weight": 1.0},
-    {"id": "PR-3", "domain": "Protect", "text": "Patching: OS/apps are updated within defined timeframes.", "weight": 1.2},
-    {"id": "PR-4", "domain": "Protect", "text": "Users receive phishing/security awareness training at least annually.", "weight": 0.8},
-    # Detect
-    {"id": "DE-1", "domain": "Detect", "text": "We collect and review security logs from critical systems (e.g., M365/AWS).", "weight": 1.2},
-    {"id": "DE-2", "domain": "Detect", "text": "Alerts are configured for suspicious sign-ins and data exfiltration.", "weight": 1.0},
-    # Respond
-    {"id": "RS-1", "domain": "Respond", "text": "We have a documented incident response plan (IRP).", "weight": 1.2},
-    {"id": "RS-2", "domain": "Respond", "text": "We run an incident simulation/table-top at least annually.", "weight": 1.0},
-    # Recover
-    {"id": "RC-1", "domain": "Recover", "text": "We have tested backups for critical systems and data in the last 6 months.", "weight": 1.2},
-    {"id": "RC-2", "domain": "Recover", "text": "We have defined recovery time objectives (RTO) for key services.", "weight": 1.0},
-]
-
-# ASD Essential Eight (simple snapshot)
-E8_ITEMS = [
-    ("Application control", 1.0),
-    ("Patch applications", 1.2),
-    ("Configure MS Office macro settings", 0.8),
-    ("User application hardening", 1.0),
-    ("Restrict admin privileges", 1.2),
-    ("Patch operating systems", 1.2),
-    ("Multi-factor authentication", 1.5),
-    ("Regular backups", 1.1),
-]
-
-REMEDIATIONS: Dict[str, List[str]] = {
+QUESTIONS = {
     "Identify": [
-        "Establish and maintain an asset inventory across devices, accounts, SaaS, and data stores.",
-        "Label and protect sensitive data; restrict access based on least-privilege.",
-        "Publish a lightweight RACI so staff know their security responsibilities.",
+        "We maintain an up-to-date asset inventory (devices, SaaS, data).",
+        "We classify sensitive data and know where it lives.",
+        "Roles and security responsibilities are clearly assigned.",
     ],
     "Protect": [
-        "Enforce MFA for all users, especially admins and remote access.",
-        "Turn on full-disk encryption and automatic lock on all endpoints.",
-        "Adopt a monthly patching cadence; urgent patches within 7–14 days.",
+        "Multi-factor authentication protects critical systems and remote access.",
+        "Patching is managed and updates are applied within defined timeframes.",
+        "Backups are tested and critical systems have recovery objectives.",
     ],
     "Detect": [
-        "Enable audit logs for M365/Google/AWS and centralise high-value alerts.",
-        "Set alerts for impossible travel, excessive downloads, and repeated failed logins.",
+        "We collect and review security logs from critical systems.",
+        "We receive threat or vendor advisories and triage them.",
+        "We baseline normal behaviour and detect anomalies.",
     ],
     "Respond": [
-        "Write a one-page IRP with roles, contacts, and severity levels.",
-        "Run a 60-minute tabletop exercise each quarter and capture lessons learned.",
+        "We have an approved, tested incident response plan (IRP).",
+        "We have a process for notifying affected parties/regulators where required.",
+        "We can isolate endpoints, reset credentials and revoke access quickly.",
     ],
     "Recover": [
-        "Back up key systems daily; test restores quarterly (at least one full test).",
-        "Define RTO/RPO for each critical system and align backup strategy.",
+        "We have a disaster recovery plan with RTO/RPO targets.",
+        "We complete post-incident lessons learned and update playbooks.",
+        "We regularly rehearse recovery procedures for priority systems.",
     ],
 }
 
-INDUSTRY_THREATS = {
-    "Healthcare": ["Ransomware on file servers/EMR", "Phishing for patient data", "Legacy device vulnerabilities"],
-    "Professional Services": ["Business email compromise (BEC)", "Account takeover", "Data leakage from SaaS"],
-    "Construction": ["BEC on invoices", "Unpatched laptops on site", "Weak vendor access"],
-    "Retail": ["POS malware (if applicable)", "Credential stuffing", "Unsegmented Wi-Fi"],
-    "Education": ["Phishing targeting staff/students", "Unmanaged endpoints", "Shadow IT / SaaS sprawl"],
-    "Other": ["Phishing & credential theft", "Ransomware", "Shadow IT"],
-}
+E8_ITEMS = [
+    "Application Control", "Patch Applications", "Configure MS Office Macros",
+    "User Application Hardening", "Restrict Admin Privileges",
+    "Patch Operating Systems", "Multi-factor Authentication", "Regular Backups"
+]
+E8_SCALE = ["Not implemented", "Partially", "Mostly", "Fully"]
 
-CHOICES = ["Yes", "Partially", "No", "Don't know"]
-SCORE_MAP = {"Yes": 1.0, "Partially": 0.5, "No": 0.0, "Don't know": 0.0}
-
-# --------------------------
-# Helpers
-# --------------------------
-def score_answers(answers: Dict[str, str]) -> Tuple[pd.DataFrame, Dict[str, float], float]:
-    rows = []
-    for q in QUESTION_SET:
-        sel = answers.get(q["id"], "Don't know")
-        raw = SCORE_MAP.get(sel, 0.0)
-        weighted = raw * q["weight"]
-        rows.append(
-            {
-                "id": q["id"],
-                "domain": q["domain"],
-                "question": q["text"],
-                "choice": sel,
-                "raw": raw,
-                "weight": q["weight"],
-                "weighted": weighted,
-            }
-        )
-    df = pd.DataFrame(rows)
-    domain_scores: Dict[str, float] = {}
-    for dom in NIST_FUNCTIONS:
-        d = df[df["domain"] == dom]
-        if len(d) == 0:
-            domain_scores[dom] = 0.0
-        else:
-            max_possible = d["weight"].sum()
-            got = d["weighted"].sum()
-            frac = got / max_possible if max_possible > 0 else 0.0
-            domain_scores[dom] = 1.0 + 4.0 * frac  # to 1..5
-    overall_index = round(100.0 * (sum(domain_scores.values()) / (5.0 * len(NIST_FUNCTIONS))), 1)
-    return df, domain_scores, overall_index
-
-def top_recommendations(domain_scores: Dict[str, float], industry: str, k: int = 6) -> List[str]:
-    ranked = sorted(domain_scores.items(), key=lambda x: x[1])  # weakest first
-    recs: List[str] = []
-    for dom, _ in ranked:
-        for r in REMEDIATIONS.get(dom, []):
-            if r not in recs:
-                recs.append(r)
-            if len(recs) >= k:
-                break
-        if len(recs) >= k:
-            break
-    threats = INDUSTRY_THREATS.get(industry, INDUSTRY_THREATS["Other"])
-    recs.append(f"Industry watch-outs: {', '.join(threats)}.")
-    return recs
-
-def radar_chart(domain_scores: Dict[str, float]):
-    if not PLOTLY_OK:
-        st.warning("Plotly not installed. Radar chart unavailable. Install `plotly` to enable charts.")
-        return
-    cats = list(domain_scores.keys())
-    vals = list(domain_scores.values())
-    cats += [cats[0]]
-    vals += [vals[0]]
-    fig = go.Figure(go.Scatterpolar(r=vals, theta=cats, fill="toself", name="Score"))
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[1, 5])),
-        showlegend=False,
-        margin=dict(l=20, r=20, t=30, b=20),
-        height=420,
+# ---------------------------
+# ORGANIZATION
+# ---------------------------
+st.subheader("Organization")
+with st.container():
+    c1, c2, c3 = st.columns([2, 1.3, 1.3])
+    company = c1.text_input("Company / Org name")
+    industry = c2.selectbox(
+        "Industry",
+        ["Professional Services", "Education", "Healthcare", "Finance", "Retail", "Government", "Other"],
     )
-    st.plotly_chart(fig, use_container_width=True)
+    size = c3.selectbox("Org size", ["1–9", "10–49", "50–249", "250–999", "1000+"])
 
-def build_markdown_report(meta: Dict, domain_scores: Dict[str, float], overall: float, recs: List[str]) -> str:
-    lines: List[str] = []
-    lines.append("# Cyber Health Check — PoC Report")
+st.divider()
+
+# ---------------------------
+# ASSESSMENT TABS
+# ---------------------------
+tab_assess, tab_results, tab_report = st.tabs(["Assessment", "Results", "Report"])
+
+with tab_assess:
+    st.markdown(
+        "Answer honestly. Use **Don't know** if unsure — we’ll treat that as a middle score so your results stay balanced."
+    )
+    st.markdown("")
+
+    responses = {}
+    for func in NIST_FUNCTIONS:
+        with st.expander(f"**{func}** — {len(QUESTIONS[func])} questions", expanded=False):
+            for i, q in enumerate(QUESTIONS[func], start=1):
+                key = f"{func}_{i}"
+                ans = st.radio(q, SCALE_LABELS, horizontal=True, key=key, index=2)  # default "Mostly"
+                responses[key] = SCALE[ans]
+
+    st.markdown("---")
+    st.subheader("Essential Eight quick check")
+    st.caption("Indicative self-assessment of ACSC Essential Eight. Pick the level that best matches your current state.")
+    e8_scores = {}
+    e8_cols = st.columns(2)
+    for i, name in enumerate(E8_ITEMS):
+        with e8_cols[i % 2]:
+            choice = st.radio(name, E8_SCALE, horizontal=False, key=f"E8_{i}", index=1)
+            e8_scores[name] = E8_SCALE.index(choice)  # 0..3
+
+    st.markdown("")
+    run = st.button("Calculate results")
+
+# ---------------------------
+# CALCULATE
+# ---------------------------
+def compute_nist_scores(resp: dict[str, int]) -> pd.DataFrame:
+    rows = []
+    for func in NIST_FUNCTIONS:
+        vals = [resp.get(f"{func}_{i}", 1) for i in range(1, len(QUESTIONS[func]) + 1)]
+        avg = float(np.mean(vals)) if vals else 0.0
+        rows.append({"Function": func, "Score": avg})
+    return pd.DataFrame(rows)
+
+def compute_recos(nist_df: pd.DataFrame, e8_map: dict[str, int]) -> list[str]:
+    recs = []
+    # Lowest two NIST functions
+    low_funcs = nist_df.sort_values("Score").head(2)["Function"].tolist()
+    for lf in low_funcs:
+        recs.append(f"Raise **{lf}** maturity with short, time-boxed actions and clear owners.")
+    # Highlight weakest E8 items
+    e8_sorted = sorted(e8_map.items(), key=lambda x: x[1])
+    for name, score in e8_sorted[:2]:
+        recs.append(f"Lift **Essential Eight — {name}** from level {score} with a 30-day improvement plan.")
+    # Generic quick wins
+    recs.append("Enable **MFA** everywhere practical (privileged, remote, cloud, email).")
+    recs.append("Tighten **patching SLAs** for internet-exposed systems and critical apps.")
+    recs.append("Ensure **tested backups** for critical data and define RTO/RPO.")
+    return recs[:6]
+
+def build_markdown_report(company: str, industry: str, size: str,
+                          nist_df: pd.DataFrame, e8_map: dict[str, int]) -> str:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines = []
+    title = company or "Cyber Health Check"
+    lines.append(f"# {title} — NCP Cyber Health Check (NIST CSF)")
     lines.append("")
-    lines.append(f"**Organization:** {meta.get('name','(not provided)')}  ")
-    lines.append(f"**Industry:** {meta.get('industry')}  ")
-    lines.append(f"**Size:** {meta.get('size')} staff  ")
-    lines.append(f"**Region:** {meta.get('region')}  ")
-    lines.append(f"**Date:** {dt.date.today().isoformat()}")
+    lines.append(f"_Generated on {now}_  \n_Industry:_ **{industry}**  ·  _Size:_ **{size}**")
     lines.append("")
-    lines.append("## Overall Index")
-    lines.append(f"**{overall}/100**  ")
-    lines.append("> Index is the average of NIST CSF function scores normalised to 100.")
+    lines.append("## NIST CSF Results (0–3)")
+    for _, row in nist_df.iterrows():
+        lines.append(f"- **{row['Function']}**: {row['Score']:.2f} / 3")
     lines.append("")
-    lines.append("## NIST CSF Function Scores (1–5)")
-    for k, v in domain_scores.items():
-        lines.append(f"- **{k}:** {v:.1f}")
+    lines.append("## Essential Eight (Level 0–3)")
+    for k, v in e8_map.items():
+        lines.append(f"- **{k}**: Level {v}")
     lines.append("")
-    lines.append("## Top Recommendations")
-    for i, r in enumerate(recs, 1):
-        lines.append(f"{i}. {r}")
+    lines.append("## Top Recommended Actions")
+    for r in compute_recos(nist_df, e8_map):
+        lines.append(f"- {r}")
     lines.append("")
-    lines.append("_This is a demonstration prototype. Results are advisory and not a formal audit._")
+    lines.append("> Prototype only — indicative, not a formal audit or assurance report.")
     return "\n".join(lines)
 
-# --------------------------
-# Sidebar (Org + options)
-# --------------------------
-with st.sidebar:
-    st.header("Organization")
-    org_name = st.text_input("Company / Org name", "")
-    industry = st.selectbox("Industry", ["Professional Services", "Healthcare", "Construction", "Retail", "Education", "Other"], index=0)
-    size = st.number_input("Headcount", min_value=1, max_value=100000, value=25, step=1)
-    region = st.selectbox("Region", ["AU/NZ", "SE Asia", "North America", "Europe/MENA", "Other"], index=0)
+# ---------------------------
+# RESULTS
+# ---------------------------
+with tab_results:
+    if run or "Identify_1" in st.session_state:
+        nist_df = compute_nist_scores(st.session_state)
+        overall = nist_df["Score"].mean() if not nist_df.empty else 0.0
 
-    st.markdown("---")
-    contact_email = st.text_input("Email (optional, to include on the report)")
+        left, right = st.columns([1.4, 1])
+        with left:
+            st.markdown("#### NIST CSF radar")
+            r_df = pd.DataFrame(dict(
+                r=nist_df["Score"].tolist(),
+                theta=nist_df["Function"].tolist()
+            ))
+            fig = px.line_polar(r_df, r='r', theta='theta', line_close=True)
+            fig.update_traces(fill='toself', name='Current State', line_color="#D4AF37")
+            fig.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 3])),
+                showlegend=False, margin=dict(l=10, r=10, t=10, b=10)
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
-    e8_on = st.toggle("Show Essential Eight section", value=True)
+        with right:
+            st.markdown("#### Overall maturity")
+            st.metric("Overall (0–3)", f"{overall:.2f}")
+            st.caption("Target a sustainable lift of **+0.3** over the next quarter.")
 
-    st.markdown("---")
-    st.write("**How scoring works**")
-    st.write("• Each question is weighted.\n• Answers map to a 1–5 function score.\n• Overall index is the mean of function scores scaled to 100.")
+        st.markdown("---")
+        st.markdown("#### Essential Eight — levels (0–3)")
+        e8_df = pd.DataFrame({
+            "Control": list(E8_ITEMS),
+            "Level": [st.session_state.get(f"E8_{i}", 1) for i in range(len(E8_ITEMS))]
+        })
+        bar = px.bar(e8_df, x="Control", y="Level", range_y=[0,3], color="Level",
+                     color_continuous_scale=[[0,"#f4e7b2"],[1,"#D4AF37"]],
+                     height=360)
+        bar.update_layout(margin=dict(l=10, r=10, t=10, b=10), coloraxis_showscale=False)
+        st.plotly_chart(bar, use_container_width=True)
 
-# --------------------------
-# Main assessment (NIST CSF)
-# --------------------------
-st.subheader("Assessment")
-st.write("Answer the questions below as **Yes / Partially / No / Don't know**. Keep it honest — this helps prioritise your next steps.")
+        st.markdown("---")
+        st.markdown("#### Top recommended actions")
+        recos = compute_recos(nist_df, {E8_ITEMS[i]: st.session_state.get(f"E8_{i}", 1) for i in range(len(E8_ITEMS))})
+        for r in recos:
+            st.markdown(f"- {r}")
 
-with st.form("assessment"):
-    answers: Dict[str, str] = {}
-    cols = st.columns(2)
-    for i, q in enumerate(QUESTION_SET):
-        with cols[i % 2]:
-            answers[q["id"]] = st.radio(q["text"], CHOICES, index=2, key=q["id"])
-    submitted = st.form_submit_button("Calculate Results")
+    else:
+        st.info("Run the assessment in the **Assessment** tab to see your results.")
 
-if submitted:
-    df, domain_scores, overall = score_answers(answers)
-    st.success(f"Calculated overall Cyber Health Index: **{overall}/100**")
-
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        st.markdown("#### NIST CSF Scores (1–5)")
-        score_tbl = pd.DataFrame(
-            {"Function": list(domain_scores.keys()), "Score (1–5)": [round(v, 1) for v in domain_scores.values()]}
+# ---------------------------
+# REPORT
+# ---------------------------
+with tab_report:
+    if run or "Identify_1" in st.session_state:
+        nist_df = compute_nist_scores(st.session_state)
+        e8_map = {E8_ITEMS[i]: st.session_state.get(f"E8_{i}", 1) for i in range(len(E8_ITEMS))}
+        md = build_markdown_report(company, industry, size, nist_df, e8_map)
+        st.markdown("#### Download Markdown report")
+        st.download_button(
+            "Download report (.md)",
+            md,
+            file_name=f"{(company or 'NCP_Cyber_Health_Check').replace(' ','_')}.md",
+            type="primary",
         )
-        st.dataframe(score_tbl, use_container_width=True, hide_index=True)
+        st.markdown("Preview:")
+        st.code(md, language="markdown")
+    else:
+        st.info("Generate results first, then download your report here.")
 
-    with c2:
-        st.markdown("#### Radar View")
-        radar_chart(domain_scores)
-
-    # Recommended actions
-    st.markdown("#### Top Recommended Actions")
-    recs = top_recommendations(domain_scores, industry, k=6)
-    for i, r in enumerate(recs, 1):
-        st.write(f"{i}. {r}")
-
-    # Downloads
-    st.markdown("---")
-    st.markdown("#### Downloads")
-    st.download_button(
-        "⬇️ Download your responses (CSV)",
-        data=df.to_csv(index=False).encode("utf-8"),
-        file_name="cyber_health_responses.csv",
-        mime="text/csv",
-    )
-
-    meta = {"name": org_name, "industry": industry, "size": size, "region": region, "email": contact_email or "(not provided)"}
-    report_md = build_markdown_report(meta, domain_scores, overall, recs)
-    st.download_button(
-        "⬇️ Download PoC Report (Markdown)",
-        data=report_md.encode("utf-8"),
-        file_name="cyber_health_poc_report.md",
-        mime="text/markdown",
-    )
-
-    st.caption("© PoC — For demonstration only.")
-
-else:
-    st.info("Fill the form and click **Calculate Results** to see your scores and tailored next steps.")
-
-# --------------------------
-# Essential Eight snapshot (independent section)
-# --------------------------
-if e8_on:
-    st.divider()
-    st.subheader("Essential Eight Snapshot")
-    st.write("A quick sense-check against the ASD Essential Eight. This is separate from the NIST CSF scores above.")
-
-    e8_cols = st.columns(2)
-    with st.form("e8"):
-        e8_answers: Dict[str, str] = {}
-        for i, (name, wt) in enumerate(E8_ITEMS):
-            with e8_cols[i % 2]:
-                e8_answers[name] = st.radio(name, CHOICES, index=2, key=f"E8-{i}")
-        e8_submit = st.form_submit_button("Calculate Essential Eight score")
-
-    if e8_submit:
-        # Compute E8 index + per-control percent (0–100)
-        names, wts = zip(*E8_ITEMS)
-        percents = [SCORE_MAP[e8_answers[n]] * 100 for n in names]
-        weighted = [SCORE_MAP[e8_answers[n]] * wt for n, wt in E8_ITEMS]
-        e8_score = round(100 * (sum(weighted) / sum(wts)), 1)
-
-        st.success(f"Essential Eight Index: **{e8_score}/100**")
-        st.caption("This simple index is a weighted average for a quick snapshot; not a formal maturity level.")
-
-        if not PLOTLY_OK:
-            st.warning("Plotly not installed. Enable visuals by adding `plotly` to requirements.txt.")
-        else:
-            col1, col2 = st.columns([1, 1])
-
-            # 1) Overall Gauge
-            with col1:
-                gauge = go.Figure(
-                    go.Indicator(
-                        mode="gauge+number",
-                        value=e8_score,
-                        number={"suffix": "/100"},
-                        gauge={
-                            "axis": {"range": [0, 100]},
-                            "bar": {"thickness": 0.6},
-                            "steps": [
-                                {"range": [0, 40]},
-                                {"range": [40, 70]},
-                                {"range": [70, 100]},
-                            ],
-                        },
-                        title={"text": "Essential Eight Index"},
-                    )
-                )
-                gauge.update_layout(height=280, margin=dict(l=10, r=10, t=50, b=10))
-                st.plotly_chart(gauge, use_container_width=True)
-
-            # 2) Radar (Spider) – per control (0–100)
-            with col2:
-                theta = list(names) + [names[0]]
-                rvals = percents + [percents[0]]
-                radar = go.Figure(go.Scatterpolar(r=rvals, theta=theta, fill="toself", name="E8 Controls"))
-                radar.update_layout(
-                    polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                    showlegend=False,
-                    height=280,
-                    margin=dict(l=10, r=10, t=50, b=10),
-                    title="Per-Control Snapshot",
-                )
-                st.plotly_chart(radar, use_container_width=True)
-
-            # 3) Horizontal Bar – per control (0–100)
-            bar = go.Figure(
-                go.Bar(
-                    x=percents,
-                    y=list(names),
-                    orientation="h",
-                    text=[f"{p:.0f}" for p in percents],
-                    textposition="auto",
-                )
-            )
-            bar.update_layout(
-                xaxis=dict(range=[0, 100], title="Percent"),
-                yaxis=dict(autorange="reversed"),
-                height=420,
-                margin=dict(l=10, r=20, t=40, b=40),
-                title="Essential Eight Controls (0–100)",
-            )
-            st.plotly_chart(bar, use_container_width=True)
+# ---------------------------
+# FOOTER
+# ---------------------------
+st.markdown(
+    """
+<hr style="border:0;height:1px;background:#f0f0f0;margin:32px 0 10px">
+<div style="display:flex;justify-content:space-between;align-items:center;color:#6b7280;font-size:.92rem">
+  <span>© 2025 National Consulting Partners — Advisory | Cyber | Data</span>
+  <span>Prototype only — not a formal audit or assurance report.</span>
+</div>
+""",
+    unsafe_allow_html=True,
+)
