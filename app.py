@@ -10,6 +10,24 @@ try:
     PLOTLY_OK = True
 except Exception:
     PLOTLY_OK = False
+    # --- PAGE CONFIGURATION & HEADER BRANDING ---
+st.set_page_config(
+    page_title="Cyber Health Check (NIST CSF) — NCP PoC",
+    page_icon="assets/ncp_icon_32.png",   # favicon
+    layout="wide",
+)
+
+# --- HEADER WITH LOGO ---
+col_logo, col_title = st.columns([1, 5], vertical_alignment="center")
+with col_logo:
+    st.image("assets/ncp_icon_512.png", width=56)
+with col_title:
+    st.markdown(
+        "<h2 style='margin-bottom:0;'>Cyber Health Check (NIST CSF) — Proof of Concept</h2>",
+        unsafe_allow_html=True
+    )
+    st.caption("A lightweight prototype built by National Consulting Partners to assess cyber health and resilience.")
+
 
 # --------------------------
 # Config & simple branding
