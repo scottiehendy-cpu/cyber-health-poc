@@ -10,28 +10,29 @@ try:
     PLOTLY_OK = True
 except Exception:
     PLOTLY_OK = False
-    # --- PAGE CONFIGURATION & HEADER BRANDING ---
-st.set_page_config(
-    page_title="Cyber Health Check (NIST CSF) — NCP PoC",
-    page_icon="assets/ncp_icon_32.png",   # favicon
-    layout="wide",
-)
+# --- Clean hero header ---
+st.markdown("""
+<style>
+.block-container {max-width: 1120px; padding-top: 0.6rem;}
+.ncp-hero{display:flex;gap:16px;align-items:center;padding:14px 18px;border:1px solid #ececec;
+          border-radius:14px;background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.04);}
+.ncp-hero img{width:48px;height:48px;display:block}
+.ncp-hero h1{font-size:28px;line-height:1.15;margin:0;color:#0b0b0b;font-weight:800}
+.ncp-hero h1 b{color:#0b0b0b}
+.ncp-hero small{display:block;margin-top:2px;color:#6b7280}
+.ncp-accent{height:3px;background:linear-gradient(90deg,#D4AF37, #f6e39a);border-radius:999px;margin:14px 2px 0}
+</style>
 
-# --- HEADER WITH LOGO ---
-col_logo, col_title = st.columns([1, 5], vertical_alignment="center")
-with col_logo:
-    st.image("assets/ncp_icon_512.png", width=56)
-with col_title:
-    st.markdown(
-        "<h2 style='margin-bottom:0;'>Cyber Health Check (NIST CSF) — Proof of Concept</h2>",
-        unsafe_allow_html=True
-    )
-    st.caption("A lightweight prototype built by National Consulting Partners to assess cyber health and resilience.")
+<div class="ncp-hero">
+  <img src="assets/ncp_icon_64.png" alt="NCP">
+  <div>
+    <h1><b>Cyber Health Check</b> <span style="font-weight:400;">(NIST CSF)</span></h1>
+    <small>National Consulting Partners — quick maturity snapshot & clear next steps</small>
+  </div>
+</div>
+<div class="ncp-accent"></div>
+""", unsafe_allow_html=True)
 
-
-# --------------------------
-# Config & simple branding
-# --------------------------
 st.set_page_config(
     page_title="Cyber Health Check (NIST CSF) — PoC",
     page_icon="🛡️",
