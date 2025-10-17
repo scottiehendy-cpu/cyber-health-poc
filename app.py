@@ -305,7 +305,7 @@ if e8_on:
                 )
         e8_submit = st.form_submit_button("Calculate Essential Eight score")
 
-   if e8_submit:
+       if e8_submit:
     # Compute E8 index + per-control percent (0–100)
     names, wts = zip(*E8_ITEMS)
     percents = [SCORE_MAP[e8_answers[n]] * 100 for n in names]
@@ -315,7 +315,7 @@ if e8_on:
     st.success(f"Essential Eight Index: **{e8_score}/100**")
     st.caption("This simple index is a weighted average for a quick snapshot; not a formal maturity level.")
 
-    if not PLOTLY_OK:
+       if not PLOTLY_OK:
         st.warning("Plotly not installed. Enable visuals by adding `plotly` to requirements.txt.")
     else:
         import plotly.graph_objects as go
