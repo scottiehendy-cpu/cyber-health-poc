@@ -1,6 +1,6 @@
 # ------------------------------------------------------------
-# NCP Cyber Health Check (NIST CSF) — Streamlit PoC
-# Brand: Dark navy background + gold accents
+# NCP Cyber Health Check (NIST CSF) — Premium UI
+# Dark navy + gold, splash screen, gauge chart, card-based results
 # ------------------------------------------------------------
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 
 # =========================
@@ -15,7 +16,7 @@ from datetime import datetime
 # =========================
 st.set_page_config(
     page_title="NCP Cyber Health Check (NIST CSF)",
-    page_icon="assets/ncp_icon_32.png",
+    page_icon="assets/ncp_icon_32.png",  # keep a 32px favicon in /assets
     layout="wide",
 )
 
@@ -31,17 +32,26 @@ MUTED     = "#94A3B8"
 BORDER    = "#1F2937"
 
 # =========================
-# Global CSS (dark theme)
+# Global CSS
 # =========================
 st.markdown(f"""
 <style>
 html, body, .stApp {{ background: {NAVY_BG}; color: {TEXT}; }}
 * {{ scrollbar-color: {GOLD} {SOFT_BG}; }}
 a {{ color: {GOLD}; }}
-.block-container {{ max-width: 1120px; padding-top: .6rem; }}
+
+.block-container {{ max-width: 1180px; padding-top: .6rem; }}
 
 .ncp-card {{
   background: {CARD_BG};
+  border: 1px solid {BORDER};
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+}}
+
+.ncp-soft {{
+  background: {SOFT_BG};
   border: 1px solid {BORDER};
   border-radius: 14px;
   padding: 14px 16px;
@@ -53,53 +63,32 @@ a {{ color: {GOLD}; }}
 input[type="radio"], input[type="checkbox"] {{ accent-color: {GOLD}; }}
 
 .stButton > button {{
-  background: {GOLD}; border: 1px solid #C49C2C; color:#0b0b0b; font-weight:700;
-  padding: .55rem 1rem; border-radius: 12px;
+  background: {GOLD}; border: 1px solid #C49C2C; color:#0b0b0b; font-weight:800;
+  padding: .65rem 1.1rem; border-radius: 14px; letter-spacing:.2px;
 }}
-.stButton > button:hover {{ filter: brightness(1.05); box-shadow: 0 4px 18px rgba(212,175,55,.25); }}
+.stButton > button:hover {{ filter: brightness(1.06); box-shadow: 0 6px 22px rgba(212,175,55,.3); }}
 
 .ncp-accent {{ height:3px; background: linear-gradient(90deg,{GOLD},#f6e39a); border-radius: 999px; margin: 14px 2px 12px; }}
-hr {{ border:0; height:1px; background:{BORDER}; }}
+.ncp-hr {{ height:1px; background:{BORDER}; margin: 18px 0; }}
+
+.hero {{
+  display:flex; align-items:center; gap:18px;
+  background: radial-gradient(1200px 400px at 20% -10%, rgba(212,175,55,.18), transparent 60%), {CARD_BG};
+  border: 1px solid {BORDER}; border-radius: 18px; padding: 18px 20px;
+}}
+.hero h1 {{ margin:0; font-size:30px; font-weight:900; }}
+.hero p  {{ margin:2px 0 0; color:{MUTED}; }}
+.hero img {{ width:62px; height:62px; }}
+
+.kpi {{ display:flex; align-items:center; gap:12px; }}
+.kpi .dot {{ width:10px; height:10px; border-radius:999px; background:{GOLD}; box-shadow:0 0 12px rgba(212,175,55,.6); }}
 </style>
 """, unsafe_allow_html=True)
 
 # =========================
-# Header
+# Data model
 # =========================
-c_logo, c_text = st.columns([0.14, 0.86], vertical_alignment="center")
-with c_logo:
-    st.image("assets/ncp_icon_512.png", width=56)
-with c_text:
-    st.markdown(
-        "<div style='line-height:1.1; font-size:28px; font-weight:800'>"
-        "NCP Cyber Health Check <span style='font-weight:400'>(NIST CSF)</span>"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"<div style='color:{MUTED}; margin-top:2px'>"
-        "Quick maturity snapshot & clear next steps — built for SMEs"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-st.markdown("<div class='ncp-accent'></div>", unsafe_allow_html=True)
-
-# =========================
-# Sidebar
-# =========================
-with st.sidebar:
-    st.image("assets/ncp_icon_512.png", width=40)
-    st.markdown("**NCP Cyber** — PoC")
-    st.caption("Indicative assessment based on **NIST CSF** + **Essential Eight**.")
-    st.markdown("---")
-    st.caption("Tip: use the report download to follow up with prospects.")
-
-# =========================
-# Data setup
-# =========================
-SCALE = {
-    "No": 0, "Partially": 1, "Mostly": 2, "Fully": 3, "Don't know": 1,
-}
+SCALE = {"No": 0, "Partially": 1, "Mostly": 2, "Fully": 3, "Don't know": 1}
 SCALE_LABELS = list(SCALE.keys())
 NIST_FUNCTIONS = ["Identify", "Protect", "Detect", "Respond", "Recover"]
 
@@ -139,27 +128,20 @@ E8_ITEMS = [
 E8_SCALE = ["Not implemented", "Partially", "Mostly", "Fully"]
 
 # =========================
-# Functions
+# Helpers
 # =========================
 def compute_nist_scores(state: dict) -> pd.DataFrame:
     rows = []
     for func in NIST_FUNCTIONS:
-        vals = [
-            SCALE.get(state.get(f"{func}_{i}", "Mostly"), 1)
-            for i in range(1, len(QUESTIONS[func]) + 1)
-        ]
-        avg = float(np.mean(vals)) if vals else 0.0
-        rows.append({"Function": func, "Score": avg})
+        vals = [SCALE.get(state.get(f"{func}_{i}", "Mostly"), 1) for i in range(1, len(QUESTIONS[func]) + 1)]
+        rows.append({"Function": func, "Score": float(np.mean(vals)) if vals else 0.0})
     return pd.DataFrame(rows)
 
 def get_e8_map(state: dict) -> dict[str, int]:
     out = {}
     for i, name in enumerate(E8_ITEMS):
         raw = state.get(f"E8_{i}", E8_SCALE[1])
-        if isinstance(raw, int):
-            idx = raw
-        else:
-            idx = E8_SCALE.index(raw) if raw in E8_SCALE else 1
+        idx = raw if isinstance(raw, int) else (E8_SCALE.index(raw) if raw in E8_SCALE else 1)
         out[name] = idx
     return out
 
@@ -169,9 +151,9 @@ def compute_recos(nist_df: pd.DataFrame, e8_map: dict[str, int]) -> list[str]:
     for lf in low_funcs:
         recs.append(f"Lift **{lf}** maturity with time-boxed actions and clear owners.")
     for name, score in sorted(e8_map.items(), key=lambda kv: kv[1])[:2]:
-        recs.append(f"Raise **Essential Eight — {name}** from Level {score} via a 30–60 day plan.")
+        recs.append(f"Raise **Essential Eight — {name}** from Level {score} via a 30–60 day improvement plan.")
     recs.append("Enforce **MFA** universally (privileged, email, remote, cloud).")
-    recs.append("Tighten **patch SLAs** for internet-facing systems and apps.")
+    recs.append("Tighten **patch SLAs** for internet-exposed systems and apps.")
     recs.append("Ensure **tested backups** with defined RTO/RPO.")
     return recs[:6]
 
@@ -197,22 +179,96 @@ def build_markdown_report(company, industry, size, nist_df, e8_map):
     lines.append("> Prototype only — indicative, not a formal audit.")
     return "\n".join(lines)
 
+def gauge(overall: float) -> go.Figure:
+    """Gold ring gauge 0–3."""
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=overall,
+            number={"suffix": " / 3", "font": {"color": GOLD, "size": 28}},
+            gauge={
+                "axis": {"range": [0, 3], "tickwidth": 0, "tickcolor": MUTED},
+                "bar": {"color": GOLD},
+                "bgcolor": NAVY_BG,
+                "borderwidth": 0,
+                "steps": [
+                    {"range": [0, 1], "color": "#2b2b2b"},
+                    {"range": [1, 2], "color": "#383838"},
+                    {"range": [2, 3], "color": "#444"},
+                ],
+                "threshold": {"line": {"color": GOLD, "width": 3}, "thickness": 0.75, "value": overall},
+            },
+        )
+    )
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=10, b=0),
+        paper_bgcolor=NAVY_BG,
+        font=dict(color=TEXT),
+        height=240,
+    )
+    return fig
+
 # =========================
-# UI — Organization info
+# Session flags
+# =========================
+st.session_state.setdefault("started", False)
+st.session_state.setdefault("_ran", False)
+
+# =========================
+# Header / Hero (sits on every screen)
+# =========================
+hero = st.container()
+with hero:
+    c1, c2 = st.columns([0.12, 0.88], vertical_alignment="center")
+    with c1:
+        st.image("assets/ncp_icon_512.png", width=62)
+    with c2:
+        st.markdown("<div class='hero'><div><h1>NCP Cyber Health Check</h1>"
+                    f"<p>Benchmark against NIST CSF & Essential Eight — dark-navy, gold-polished experience.</p>"
+                    "</div></div>", unsafe_allow_html=True)
+st.markdown("<div class='ncp-accent'></div>", unsafe_allow_html=True)
+
+# =========================
+# Splash (landing) screen
+# =========================
+if not st.session_state["started"]:
+    splash = st.container()
+    with splash:
+        colA, colB = st.columns([1.1, 1])
+        with colA:
+            st.markdown("### Get your Cyber Health Score in under 3 minutes")
+            st.markdown(
+                f"<div class='ncp-soft'>"
+                f"<div class='kpi'><div class='dot'></div><b>Built on NIST CSF & Essential Eight</b></div>"
+                f"<div class='kpi' style='margin-top:8px'><div class='dot'></div>Interactive visuals, clear next steps</div>"
+                f"<div class='kpi' style='margin-top:8px'><div class='dot'></div>Export a branded executive summary</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.write("")
+            if st.button("Start assessment"):
+                st.session_state["started"] = True
+                st.rerun()
+        with colB:
+            st.image("assets/ncp_icon_512.png", width=140)
+    st.stop()
+
+# =========================
+# Organization
 # =========================
 st.subheader("Organization")
-c1, c2, c3 = st.columns([2, 1.3, 1.3])
+c1, c2, c3 = st.columns([2, 1.2, 1.2])
 with c1: company = st.text_input("Company / Org name", placeholder="Acme Pty Ltd")
 with c2: industry = st.selectbox("Industry", ["Professional Services","Education","Healthcare","Finance","Retail","Government","Other"])
 with c3: size = st.selectbox("Org size", ["1–9","10–49","50–249","250–999","1000+"])
 st.markdown("<div class='ncp-accent'></div>", unsafe_allow_html=True)
 
 # =========================
-# Assessment
+# Assessment (cards)
 # =========================
 st.subheader("Assessment")
 st.markdown(
-    f"<div class='ncp-card'><b>How to answer:</b> pick the option that best fits your current practice. "
+    f"<div class='ncp-soft'><b>How to answer:</b> pick the option that best fits your current practice. "
     f"Use <i>Don't know</i> if unsure.</div>",
     unsafe_allow_html=True,
 )
@@ -225,33 +281,62 @@ for func in NIST_FUNCTIONS:
 
 st.markdown("---")
 st.subheader("Essential Eight quick check")
-st.caption("Pick the level that best matches your current state.")
+st.caption("Select the level that best matches your current state.")
 cols = st.columns(2)
 for i, control in enumerate(E8_ITEMS):
     with cols[i % 2]:
         st.radio(control, E8_SCALE, horizontal=False, index=1, key=f"E8_{i}")
 
-if st.button("Calculate results"):
-    st.session_state["_ran"] = True
+c_calc, c_reset = st.columns([0.35, 0.65])
+with c_calc:
+    if st.button("Calculate results"):
+        st.session_state["_ran"] = True
+with c_reset:
+    if st.button("Reset"):
+        for k in list(st.session_state.keys()):
+            if not k.startswith("_"):
+                del st.session_state[k]
+        st.session_state["_ran"] = False
+        st.rerun()
 
 st.markdown("<div class='ncp-accent'></div>", unsafe_allow_html=True)
 
 # =========================
-# Results + Report (inline)
+# Results (cards + gauge)
 # =========================
-if st.session_state.get("_ran"):
+if st.session_state["_ran"]:
     nist_df = compute_nist_scores(st.session_state)
     e8_map = get_e8_map(st.session_state)
     overall = float(nist_df["Score"].mean()) if not nist_df.empty else 0.0
 
     st.subheader("Results")
-    left, right = st.columns([1.4, 1])
+
+    # Top ring gauge + headline
+    g1, g2 = st.columns([0.8, 1.2])
+    with g1:
+        st.markdown("#### Cyber Health Index")
+        st.plotly_chart(gauge(overall), use_container_width=True)
+    with g2:
+        st.markdown("#### Highlights")
+        top_area = nist_df.sort_values("Score", ascending=False).iloc[0]["Function"]
+        low_area = nist_df.sort_values("Score", ascending=True).iloc[0]["Function"]
+        st.markdown(
+            f"<div class='ncp-card'>"
+            f"<b>Overall:</b> {overall:.2f} / 3<br>"
+            f"<b>Strongest area:</b> {top_area}<br>"
+            f"<b>Most opportunity:</b> {low_area}"
+            f"</div>", unsafe_allow_html=True
+        )
+
+    # NIST radar + E8 bar
+    st.markdown("<div class='ncp-hr'></div>", unsafe_allow_html=True)
+    left, right = st.columns([1.25, 1])
     with left:
         st.markdown("#### NIST CSF radar")
         r_df = pd.DataFrame({"r": nist_df["Score"], "theta": nist_df["Function"]})
-        fig = px.line_polar(r_df, r="r", theta="theta", line_close=True)
-        fig.update_traces(fill="toself", line_color=GOLD, fillcolor="rgba(212,175,55,0.28)")
-        fig.update_layout(
+        radar = px.line_polar(r_df, r="r", theta="theta", line_close=True)
+        radar.update_traces(fill="toself", line_color=GOLD, fillcolor="rgba(212,175,55,0.28)")
+        radar.update_layout(
             polar=dict(
                 bgcolor=NAVY_BG,
                 radialaxis=dict(visible=True, range=[0, 3], gridcolor=BORDER, linecolor=MUTED),
@@ -260,31 +345,37 @@ if st.session_state.get("_ran"):
             showlegend=False,
             template="plotly_dark",
             paper_bgcolor=NAVY_BG,
-            font=dict(color=TEXT)
+            font=dict(color=TEXT),
+            margin=dict(l=10, r=10, t=10, b=10)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(radar, use_container_width=True)
     with right:
-        st.metric("Overall (0–3)", f"{overall:.2f}")
-        st.caption("Target a sustainable lift of **+0.3** over the next quarter.")
+        st.markdown("#### Essential Eight — levels (0–3)")
+        e8_df = pd.DataFrame({"Control": list(e8_map.keys()), "Level": list(e8_map.values())})
+        bar = px.bar(
+            e8_df, x="Control", y="Level", range_y=[0, 3], color="Level",
+            color_continuous_scale=[[0, "#5b4b17"], [0.5, "#b28f23"], [1, GOLD]],
+            height=360
+        )
+        bar.update_layout(
+            coloraxis_showscale=False,
+            xaxis=dict(showgrid=False),
+            yaxis=dict(gridcolor=BORDER),
+            template="plotly_dark",
+            paper_bgcolor=NAVY_BG,
+            font=dict(color=TEXT),
+            margin=dict(l=10, r=10, t=10, b=10)
+        )
+        st.plotly_chart(bar, use_container_width=True)
 
-    st.markdown("---")
-    st.markdown("#### Essential Eight — levels (0–3)")
-    e8_df = pd.DataFrame({"Control": list(e8_map.keys()), "Level": list(e8_map.values())})
-    bar = px.bar(
-        e8_df, x="Control", y="Level", range_y=[0, 3], color="Level",
-        color_continuous_scale=[[0, "#5b4b17"], [0.5, "#b28f23"], [1, GOLD]],
-        height=360
-    )
-    bar.update_layout(coloraxis_showscale=False, xaxis=dict(showgrid=False), yaxis=dict(gridcolor=BORDER))
-    st.plotly_chart(bar, use_container_width=True)
-
-    st.markdown("---")
+    # Recommendations + Download
+    st.markdown("<div class='ncp-hr'></div>", unsafe_allow_html=True)
     st.markdown("#### Top recommended actions")
     for r in compute_recos(nist_df, e8_map):
         st.markdown(f"- {r}")
 
-    st.markdown("---")
-    st.markdown("#### Download report")
+    st.markdown("<div class='ncp-hr'></div>", unsafe_allow_html=True)
+    st.markdown("#### Download executive summary")
     md = build_markdown_report(company, industry, size, nist_df, e8_map)
     st.download_button(
         "Download report (.md)",
@@ -298,7 +389,7 @@ if st.session_state.get("_ran"):
 # =========================
 # Footer
 # =========================
-st.markdown("<hr>", unsafe_allow_html=True)
+st.markdown("<div class='ncp-hr'></div>", unsafe_allow_html=True)
 st.markdown(
     f"<div style='display:flex;justify-content:space-between;align-items:center;color:{MUTED};font-size:.92rem'>"
     f"<span>© 2025 National Consulting Partners — Advisory | Cyber | Data</span>"
