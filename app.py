@@ -1,6 +1,7 @@
 # ------------------------------------------------------------
-# NCP Cyber Health Check (NIST CSF) — Premium UI
+# NCP Cyber Health Check (NIST CSF) — Premium UI + Cyber BG
 # Dark navy + gold, splash screen, gauge chart, card-based results
+# Background image: assets/background_cyber.jpg
 # ------------------------------------------------------------
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ st.set_page_config(
 # Brand colours
 # =========================
 GOLD      = "#D4AF37"
-NAVY_BG   = "#0B1220"
+NAVY_BG   = "#0B1220"   # used for overlays
 CARD_BG   = "#0F172A"
 SOFT_BG   = "#11182B"
 TEXT      = "#E5E7EB"
@@ -32,16 +33,38 @@ MUTED     = "#94A3B8"
 BORDER    = "#1F2937"
 
 # =========================
-# Global CSS
+# Global CSS (with cyber background image)
 # =========================
 st.markdown(f"""
 <style>
-html, body, .stApp {{ background: {NAVY_BG}; color: {TEXT}; }}
-* {{ scrollbar-color: {GOLD} {SOFT_BG}; }}
+/* Full-page cyber background */
+html, body, .stApp {{
+  background: url("assets/background_cyber.jpg") no-repeat center center fixed;
+  background-size: cover;
+  color: {TEXT};
+}}
+/* Optional overall dark overlay for readability (behind content) */
+html::before {{
+  content:"";
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);  /* tweak 0.35–0.6 based on your image brightness */
+  z-index: -1;
+}}
+
+/* Main content container: glassy panel effect */
+.block-container {{
+  max-width: 1180px; padding-top: .6rem;
+  backdrop-filter: blur(6px);
+  background: rgba(11,18,32,0.82);   /* semi-transparent navy */
+  border: 1px solid {BORDER};
+  border-radius: 20px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.45);
+}}
+
+* {{ scrollbar-color: {GOLD} rgba(255,255,255,0.08); }}
 a {{ color: {GOLD}; }}
 
-.block-container {{ max-width: 1180px; padding-top: .6rem; }}
-
+/* Cards */
 .ncp-card {{
   background: {CARD_BG};
   border: 1px solid {BORDER};
@@ -49,7 +72,6 @@ a {{ color: {GOLD}; }}
   padding: 16px 18px;
   box-shadow: 0 8px 24px rgba(0,0,0,.25);
 }}
-
 .ncp-soft {{
   background: {SOFT_BG};
   border: 1px solid {BORDER};
@@ -57,20 +79,24 @@ a {{ color: {GOLD}; }}
   padding: 14px 16px;
 }}
 
+/* Inputs */
 .stSelectbox > div > div {{ background: {SOFT_BG}; border-radius: 10px; border:1px solid {BORDER}; }}
 .stSelectbox > div > div:hover {{ border-color: {GOLD}; }}
 .stRadio > div {{ row-gap: .35rem; }}
 input[type="radio"], input[type="checkbox"] {{ accent-color: {GOLD}; }}
 
+/* Buttons */
 .stButton > button {{
   background: {GOLD}; border: 1px solid #C49C2C; color:#0b0b0b; font-weight:800;
   padding: .65rem 1.1rem; border-radius: 14px; letter-spacing:.2px;
 }}
 .stButton > button:hover {{ filter: brightness(1.06); box-shadow: 0 6px 22px rgba(212,175,55,.3); }}
 
+/* Accents & separators */
 .ncp-accent {{ height:3px; background: linear-gradient(90deg,{GOLD},#f6e39a); border-radius: 999px; margin: 14px 2px 12px; }}
 .ncp-hr {{ height:1px; background:{BORDER}; margin: 18px 0; }}
 
+/* Hero */
 .hero {{
   display:flex; align-items:center; gap:18px;
   background: radial-gradient(1200px 400px at 20% -10%, rgba(212,175,55,.18), transparent 60%), {CARD_BG};
@@ -78,8 +104,8 @@ input[type="radio"], input[type="checkbox"] {{ accent-color: {GOLD}; }}
 }}
 .hero h1 {{ margin:0; font-size:30px; font-weight:900; }}
 .hero p  {{ margin:2px 0 0; color:{MUTED}; }}
-.hero img {{ width:62px; height:62px; }}
 
+/* KPI list */
 .kpi {{ display:flex; align-items:center; gap:12px; }}
 .kpi .dot {{ width:10px; height:10px; border-radius:999px; background:{GOLD}; box-shadow:0 0 12px rgba(212,175,55,.6); }}
 </style>
@@ -189,12 +215,12 @@ def gauge(overall: float) -> go.Figure:
             gauge={
                 "axis": {"range": [0, 3], "tickwidth": 0, "tickcolor": MUTED},
                 "bar": {"color": GOLD},
-                "bgcolor": NAVY_BG,
+                "bgcolor": "rgba(0,0,0,0)",
                 "borderwidth": 0,
                 "steps": [
-                    {"range": [0, 1], "color": "#2b2b2b"},
-                    {"range": [1, 2], "color": "#383838"},
-                    {"range": [2, 3], "color": "#444"},
+                    {"range": [0, 1], "color": "rgba(255,255,255,0.05)"},
+                    {"range": [1, 2], "color": "rgba(255,255,255,0.08)"},
+                    {"range": [2, 3], "color": "rgba(255,255,255,0.11)"},
                 ],
                 "threshold": {"line": {"color": GOLD, "width": 3}, "thickness": 0.75, "value": overall},
             },
@@ -202,7 +228,7 @@ def gauge(overall: float) -> go.Figure:
     )
     fig.update_layout(
         margin=dict(l=10, r=10, t=10, b=0),
-        paper_bgcolor=NAVY_BG,
+        paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color=TEXT),
         height=240,
     )
@@ -215,7 +241,7 @@ st.session_state.setdefault("started", False)
 st.session_state.setdefault("_ran", False)
 
 # =========================
-# Header / Hero (sits on every screen)
+# Header / Hero (on all screens)
 # =========================
 hero = st.container()
 with hero:
@@ -224,7 +250,7 @@ with hero:
         st.image("assets/ncp_icon_512.png", width=62)
     with c2:
         st.markdown("<div class='hero'><div><h1>NCP Cyber Health Check</h1>"
-                    f"<p>Benchmark against NIST CSF & Essential Eight — dark-navy, gold-polished experience.</p>"
+                    f"<p>Benchmark against NIST CSF & Essential Eight — premium cyber experience.</p>"
                     "</div></div>", unsafe_allow_html=True)
 st.markdown("<div class='ncp-accent'></div>", unsafe_allow_html=True)
 
@@ -338,13 +364,13 @@ if st.session_state["_ran"]:
         radar.update_traces(fill="toself", line_color=GOLD, fillcolor="rgba(212,175,55,0.28)")
         radar.update_layout(
             polar=dict(
-                bgcolor=NAVY_BG,
+                bgcolor="rgba(0,0,0,0)",
                 radialaxis=dict(visible=True, range=[0, 3], gridcolor=BORDER, linecolor=MUTED),
                 angularaxis=dict(gridcolor=BORDER, linecolor=MUTED),
             ),
             showlegend=False,
             template="plotly_dark",
-            paper_bgcolor=NAVY_BG,
+            paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color=TEXT),
             margin=dict(l=10, r=10, t=10, b=10)
         )
@@ -362,7 +388,7 @@ if st.session_state["_ran"]:
             xaxis=dict(showgrid=False),
             yaxis=dict(gridcolor=BORDER),
             template="plotly_dark",
-            paper_bgcolor=NAVY_BG,
+            paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color=TEXT),
             margin=dict(l=10, r=10, t=10, b=10)
         )
